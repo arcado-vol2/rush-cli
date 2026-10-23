@@ -3,4 +3,11 @@ name = "rush-cli"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "rush"
+path = "src/main.rs"
+
 [dependencies]
+rush-lib = { path = "rush-lib" }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
