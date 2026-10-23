@@ -3,8 +3,21 @@ use std::{env, fs, io, path::{Path, PathBuf}, process::ExitCode};
 use rush_lib::Project;
 
 use crate::config::{ConfigWarning, ProjectFile};
+use clap::Parser;
 
 mod config;
+
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    name: String,
+
+    #[arg(short, long, default_value_t = 1)]
+    count: u8,
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 enum Warning {
@@ -56,6 +69,7 @@ fn build(root: &Path) -> io::Result<Vec<Warning>> {
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
 
     let (mut project, project_warns) = Project::index_dir_common(&file.input)?;
+    println!("{:?}", project); 
     warns.extend(project_warns.into_iter().map(Warning::from));
     for entry in file.content {
         project.add_content(entry.name, entry.path);
