@@ -1,6 +1,6 @@
 use std::{fs, io, path::{Path, PathBuf}};
 use rush_lib::{Config, DocOut, DocStyle};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) const PROJECT_FILE: &str = "project.toml";
 
@@ -33,7 +33,7 @@ pub(crate) struct ProjectFile {
     pub(crate) content: Vec<ContentEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ContentEntry {
     pub(crate) name: String,
     pub(crate) path: String,
@@ -87,15 +87,11 @@ struct RawBuild {
 }
 
 impl ProjectFile {
-    pub(crate) fn load(root: &Path) -> (ProjectFile, Vec<ConfigWarning>) {
-        let (mut project, warnings) = match fs::read_to_string(root.join(PROJECT_FILE)) {
-            Ok(src) => Self::parse(&src),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => (ProjectFile::default(), Vec::new()),
-            Err(e) => (ProjectFile::default(), vec![ConfigWarning::Unreadable(e.to_string())]),
-        };
+    pub(crate) fn load(root: &Path) -> io::Result<(ProjectFile, Vec<ConfigWarning>)> {
+        let (mut project, warnings) = Self::parse(&fs::read_to_string(root.join(PROJECT_FILE))?);
         project.input = root.join(&project.input);
         project.output = root.join(&project.output);
-        (project, warnings)
+        Ok((project, warnings))
     }
 
     pub(crate) fn parse(src: &str) -> (ProjectFile, Vec<ConfigWarning>) {
@@ -294,13 +290,7 @@ out = \"pdf\"");
         assert!(w.is_empty());
     }
 
-    #[test]
-    fn missing_file() {
-        let root = Path::new("definitely/not/a/project");
-        let (out, w) = ProjectFile::load(root);
-        assert_eq!(out, ProjectFile { input: root.join("src"), output: root.join("out"), ..ProjectFile::default() });
-        assert!(w.is_empty());
-    }
+
 
     fn check_paths(src: &str, input: &str, output: &str, warnings: Vec<ConfigWarning>) {
         let (out, w) = ProjectFile::parse(src);
@@ -379,7 +369,7 @@ path = \"d\"");
         let src = format!("[build]\ninput = \"text\"\noutput = '{}'", abs.display());
         fs::write(root.join(PROJECT_FILE), src).unwrap();
 
-        let (out, w) = ProjectFile::load(&root);
+        let (out, w) = ProjectFile::load(&root).unwrap();
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(out.input, root.join("text"));
         assert_eq!(out.output, abs);
