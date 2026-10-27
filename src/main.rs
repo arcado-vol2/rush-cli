@@ -11,18 +11,15 @@ mod config;
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum Style {
-    /// GOST - document will be formatted in pure GOST 7.32, with all it pros and cons. 
+    /// document will be formatted in pure GOST 7.32, with all it pros and cons. 
     /// Perfect for printing, though less convenuent for digital view.
-    Gost,
-    /// GOST like - document will look simmular to GOST 7.32, but more addapted for digital view.
-    GostLike 
+    Gost7_32,
 }
 
 impl fmt::Display for Style {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Gost => write!(f, "gost"),
-            Self::GostLike => write!(f, "gostlike")
+            Self::Gost7_32 => write!(f, "gost_7_32"),
         }
     }
 }
@@ -30,16 +27,19 @@ impl fmt::Display for Style {
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum OutType {
-    /// Depending on style on render project will create one or many html documents with single css file. 
+    /// Create HTML tree in output with single CSS file.
     /// In this out type all images will be copied to out directory.
-    /// If it possible in selected style in out directory file tree will be the same as in input.
-    Html
+    Html, 
+    /// Create a single multipadge HTML+CSS file in output.
+    /// In this out type all images will be copied to out directory.
+    HtmlPadges
 }
 
-impl fmt::Display for OutType {
+impl fmt::Display for OutType { 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Html => write!(f, "html")
+            Self::Html => write!(f, "html"),
+            Self::HtmlPadges => write!(f, "html-padges")
         }
     }
 }
@@ -51,16 +51,16 @@ enum Command {
     New {
         /// Name of the project
         name: String,
-        #[arg(value_enum, default_value_t = Style::GostLike)]
+        #[arg(short, long, value_enum, default_value_t = Style::Gost7_32)]
         /// Determines the style of the render.
         style: Style,
-        #[arg(value_enum, default_value_t = OutType::Html)]
+        #[arg(short, long, value_enum, default_value_t = OutType::Html)]
         /// Determines the render filetype.
         out_type: OutType,
-        #[arg(short, long, default_value = "src")]
+        #[arg(long, default_value = "src")]
         /// How to name src folder
         src_name: String,
-        #[arg(short, long, default_value = "out")]
+        #[arg(long, default_value = "out")]
         /// How to name out folder
         out_name: String
     },
@@ -76,7 +76,14 @@ enum Command {
         name: String,
         /// Relative path to new file, from src. If not set will be crated in src root. With filename same as 'name'
         path: Option<PathBuf>
-    }
+    },
+    /// Remove .rush file from project
+    Remove {
+        /// Name of the file in project
+        name: String
+    },
+    /// Show all .rush files in project
+    List
 }
 
 #[derive(Parser, Debug)]
@@ -85,6 +92,7 @@ struct Args {
     #[command(subcommand)]
     command: Command,
 }
+
 
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,6 +156,33 @@ fn main() -> ExitCode {
                     return  ExitCode::FAILURE;
                 }
             }
+        }
+        Command::Remove { name } => {
+            match remove(&name) {
+                Ok(Removed::Deleted) => {
+                    println!("Successfully removed file '{name}'");
+                    return ExitCode::SUCCESS;
+                },
+                Ok(Removed::MissingOnDisk) => {
+                    println!("Removed '{name}' from project, file was already missing on disk");
+                    return ExitCode::SUCCESS;
+                },
+                Ok(Removed::NotInProject) => {
+                    println!("Not founded file '{name}' in project");
+                    return  ExitCode::FAILURE;
+                },
+                Err(e) => {
+                    eprintln!("Failed to remove file: {e}");
+                    return  ExitCode::FAILURE;
+                }
+            }
+        }
+        Command::List => {
+            if let Err(e) = list() {
+                eprintln!("Fauled to list a project: {e}");
+                return ExitCode::FAILURE;
+            }
+            return ExitCode::SUCCESS;
         }
     }
 }
@@ -224,7 +259,8 @@ fn build(redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
     )?;
     if let Some(redef_out_type ) = redef_out_type {
         match redef_out_type {
-            OutType::Html => file.config.out = rush_lib::DocOut::Html
+            OutType::Html => file.config.out = rush_lib::DocOut::Html,
+            OutType::HtmlPadges => file.config.out = rush_lib::DocOut::Html
         }
     }
     
@@ -232,7 +268,6 @@ fn build(redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
 
     let (mut project, project_warns) = Project::index_dir_common(&file.input)?;
-    println!("{:?}", project); 
     warns.extend(project_warns.into_iter().map(Warning::from));
     for entry in file.content {
         project.add_content(entry.name, entry.path);
@@ -259,4 +294,53 @@ fn create_parent(path: &Path) -> io::Result<()> {
         Some(dir) => fs::create_dir_all(dir),
         None => Ok(()),
     }
+}
+
+enum Removed {
+    Deleted,
+    MissingOnDisk,
+    NotInProject,
+}
+
+fn remove(name: &str) -> io::Result<Removed> {
+    let root = env::current_dir()?;
+    let (mut project, _) = ProjectFile::load(&root).map_err(|e|
+        match e.kind() {
+            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
+            _ => e,
+        }
+    )?;
+    let Some((pos, entry)) = project.remove_content_by_name(name) else {
+        return Ok(Removed::NotInProject);
+    };
+    project.save(&root)?;
+
+    match fs::remove_file(project.input.join(&entry.path)) {
+        Ok(()) => Ok(Removed::Deleted),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Removed::MissingOnDisk),
+        Err(e) => {
+            project.content.insert(pos, entry);
+            match project.save(&root) {
+                Ok(()) => Err(e),
+                Err(save_err) => Err(io::Error::new(
+                    e.kind(),
+                    format!("{e}; failed to restore entry in {PROJECT_FILE}: {save_err}"),
+                )),
+            }
+        }
+    }
+}
+
+fn list() -> io::Result<()>{
+    let root = env::current_dir()?;
+    let (project, _) = ProjectFile::load(&root).map_err(|e|
+        match e.kind() {
+            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
+            _ => e,
+        }
+    )?;
+    for content in project.content {
+        println!("\"{}\": ./{}", content.name, content.path)
+    }
+    Ok(())
 }

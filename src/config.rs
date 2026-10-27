@@ -6,8 +6,7 @@ pub(crate) const PROJECT_FILE: &str = "project.toml";
 
 fn style_from_name(name: &str) -> Option<DocStyle> {
     match name {
-        "gostlike" => Some(DocStyle::GostLike),
-        "gost" => Some(DocStyle::Gost),
+        "gost_7_32" => Some(DocStyle::Gost7_32),
         "modern" => Some(DocStyle::Modern),
         "light" => Some(DocStyle::Light),
         _ => None,
@@ -17,11 +16,31 @@ fn style_from_name(name: &str) -> Option<DocStyle> {
 fn out_from_name(name: &str) -> Option<DocOut> {
     match name {
         "html" => Some(DocOut::Html),
+        "html-padges" => Some(DocOut::HtmlPaged),
         "markdown" => Some(DocOut::Markdown),
         "pdf" => Some(DocOut::Pdf),
         "odt" => Some(DocOut::Odt),
         "docx" => Some(DocOut::Docx),
         _ => None
+    }
+}
+
+fn style_name(style: DocStyle) -> &'static str {
+    match style {
+        DocStyle::Gost7_32 => "gost_7_32",
+        DocStyle::Modern => "modern",
+        DocStyle::Light => "light",
+    }
+}
+
+fn out_name(out: DocOut) -> &'static str {
+    match out {
+        DocOut::Html => "html",
+        DocOut::HtmlPaged => "html-padges",
+        DocOut::Markdown => "markdown",
+        DocOut::Pdf => "pdf",
+        DocOut::Odt => "odt",
+        DocOut::Docx => "docx",
     }
 }
 
@@ -86,7 +105,50 @@ struct RawBuild {
     output: Option<toml::Value>
 }
 
+#[derive(Serialize)]
+struct OutProjectFile<'a> {
+    document: OutDocument,
+    build: OutBuild,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    content: &'a Vec<ContentEntry>,
+}
+
+#[derive(Serialize)]
+struct OutDocument {
+    style: &'static str,
+    out: &'static str,
+}
+
+#[derive(Serialize)]
+struct OutBuild {
+    input: String,
+    output: String,
+}
+
+fn relative_to(path: &Path, root: &Path) -> String {
+    path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned()
+}
+
 impl ProjectFile {
+    pub(crate) fn save(&self, root: &Path) -> io::Result<()> {
+        fs::write(root.join(PROJECT_FILE), self.to_toml(root))
+    }
+
+    pub(crate) fn to_toml(&self, root: &Path) -> String {
+        let raw = OutProjectFile {
+            document: OutDocument {
+                style: style_name(self.config.style),
+                out: out_name(self.config.out),
+            },
+            build: OutBuild {
+                input: relative_to(&self.input, root),
+                output: relative_to(&self.output, root),
+            },
+            content: &self.content,
+        };
+        toml::to_string(&raw).expect("ProjectFile всегда сериализуется в TOML")
+    }
+
     pub(crate) fn load(root: &Path) -> io::Result<(ProjectFile, Vec<ConfigWarning>)> {
         let (mut project, warnings) = Self::parse(&fs::read_to_string(root.join(PROJECT_FILE))?);
         project.input = root.join(&project.input);
@@ -121,6 +183,11 @@ impl ProjectFile {
             out.content = content_param(content, &mut warnings);
         }
         (out, warnings)
+    }
+    
+    pub(crate) fn remove_content_by_name(&mut self, name: &str) -> Option<(usize, ContentEntry)> {
+        let pos = self.content.iter().position(|entry| entry.name == name)?;
+        Some((pos, self.content.remove(pos)))
     }
 }
 
@@ -208,31 +275,30 @@ mod tests {
 
     #[test]
     fn valid_values() {
-        check("[document]\nstyle = \"gostlike\"", DocStyle::GostLike, vec![]);
-        check("[document]\nstyle = \"gost\"", DocStyle::Gost, vec![]);
+        check("[document]\nstyle = \"gost_7_32\"", DocStyle::Gost7_32, vec![]);
         check("[document]\nstyle = \"modern\"", DocStyle::Modern, vec![]);
         check("[document]\nstyle = \"light\"", DocStyle::Light, vec![]);
     }
 
     #[test]
     fn missing_is_default_without_warnings() {
-        check("", DocStyle::GostLike, vec![]);
-        check("[document]", DocStyle::GostLike, vec![]);
-        check("[other]\nx = 1", DocStyle::GostLike, vec![]);
+        check("", DocStyle::Gost7_32, vec![]);
+        check("[document]", DocStyle::Gost7_32, vec![]);
+        check("[other]\nx = 1", DocStyle::Gost7_32, vec![]);
     }
 
     #[test]
     fn unknown_value_falls_back() {
         check(
             "[document]\nstyle = \"Gost\"",
-            DocStyle::GostLike,
+            DocStyle::Gost7_32,
             vec![ConfigWarning::UnknownValue { key: "document.style", value: "Gost".into() }],
         );
     }
 
     #[test]
     fn wrong_type_falls_back() {
-        check("[document]\nstyle = 5", DocStyle::GostLike, vec![ConfigWarning::WrongType { key: "document.style" }]);
+        check("[document]\nstyle = 5", DocStyle::Gost7_32, vec![ConfigWarning::WrongType { key: "document.style" }]);
     }
 
     #[test]
@@ -266,7 +332,7 @@ out = \"docx\"", DocOut::Docx, vec![]);
     fn out_missing_is_html() {
         check_out("", DocOut::Html, vec![]);
         check_out("[document]
-style = \"gost\"", DocOut::Html, vec![]);
+style = \"gost_7_32\"", DocOut::Html, vec![]);
     }
 
     #[test]
@@ -328,7 +394,7 @@ path = \"guide/install.rush\"");
     #[test]
     fn content_missing_is_empty() {
         let (out, w) = ProjectFile::parse("[document]
-style = \"gost\"");
+style = \"gost_7_32\"");
         assert!(out.content.is_empty());
         assert!(w.is_empty());
     }
@@ -373,6 +439,39 @@ path = \"d\"");
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(out.input, root.join("text"));
         assert_eq!(out.output, abs);
+        assert!(w.is_empty());
+    }
+
+    #[test]
+    fn empty_content_not_serialized() {
+        let root = PathBuf::from("root");
+        let src = ProjectFile::default().to_toml(&root);
+        assert!(!src.contains("content"), "{src}");
+
+        let appended = format!("{src}\n[[content]]\nname = \"A\"\npath = \"a.rush\"\n");
+        let (out, w) = ProjectFile::parse(&appended);
+        assert_eq!(out.content, vec![entry("A", "a.rush")]);
+        assert!(w.is_empty());
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let root = std::env::temp_dir().join("rush_cli_save_roundtrip");
+        fs::create_dir_all(&root).unwrap();
+        let abs = std::env::temp_dir().join("abs_out");
+        let project = ProjectFile {
+            config: Config { style: DocStyle::Light, out: DocOut::HtmlPaged },
+            input: root.join("text"),
+            output: abs.clone(),
+            content: vec![entry("Введение", "intro"), entry("Установка", "guide/install.rush")],
+        };
+
+        project.save(&root).unwrap();
+        let saved = fs::read_to_string(root.join(PROJECT_FILE)).unwrap();
+        let (loaded, w) = ProjectFile::load(&root).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(saved.contains("input = \"text\""), "{saved}");
+        assert_eq!(loaded, project);
         assert!(w.is_empty());
     }
 }
