@@ -277,11 +277,10 @@ fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>) -> io::Result<V
         }
     }
     
-    fs::remove_dir_all(&file.output)?;
-
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
-
+    println!("работаем с {:?}", file.input);
     let (mut project, project_warns) = Project::index_dir_common(&file.input)?;
+    println!("проиндексировал {project:?}");
     warns.extend(project_warns.into_iter().map(Warning::from));
     for entry in file.content {
         project.add_content(entry.name, entry.path);

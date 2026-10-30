@@ -1,0 +1,11 @@
+[document]
+style = "modern"
+out = "markdown"
+
+[build]
+input = ""
+output = ""
+
+[[content]]
+name = "README"
+path = "README.rush"

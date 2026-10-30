@@ -1,0 +1,53 @@
+\+ rush-cli
+
+\:Rush: -- "RU Simple Help", "Rusian Student Helper", "Russian Utility Syntax for Humans",  "becouse RUssian Students Hate formatting". Назвать можно по разному а суть одна
+
+\:Rush:: -- минималистичный язык разметки текстов придуманный специально для их оформления на русском языке без переключения синтаксиса. 
+
+Данный репозиторий реализует \,https://github.com/arcado-vol2/rush-lib(rush-lib) как консольное приложение и позволяет быстро управлять rush проектами.
+
+Установщик пока сделан только под Windows через \,https://jrsoftware.org/isinfo.php(inno setup) для прочих осей можно собрать из исходников
+
+\// 0
+git clone https://github.com/arcado-vol2/rush-cli.git
+cd rush-cli
+cargo build --release
+\//
+
+Исполняемый файл будет в \!/target/release/!. В \!path! тогда надо будет прописать самостоятельно.
+
+\++ Быстрый старт
+
+После установки и регистрации в \!path! создаём новый проект
+
+\// 0
+rush-cli new <ИМЯ ПРОЕКТА>
+\//
+
+Появится директория \!<ИМЯ ПРОЕКТА>! с выводом в \!html! и стилем \!gost_7_32!. Переходим в неё
+
+\// 0
+cd <ИМЯ ПРОЕКТА>
+\//
+
+После добавляем новый файл, командой
+
+\// 0
+rush-cli add <ИМЯ ФАЙЛА>
+\// 
+
+Пишем в нём текст, оформленный по \,https://github.com/arcado-vol2/rush-lib/examples-syntax/SYNTAX.md(синтаксису rush) 
+
+После собираем проект через 
+
+\// 0
+rush-cli build
+\//
+
+В директории \!out! появится html выходной файл.
+
+
+\"
+Все возможности комманд очевидно описаны в --help
+\"
+
