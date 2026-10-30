@@ -14,12 +14,16 @@ enum Style {
     /// document will be formatted in pure GOST 7.32, with all it pros and cons. 
     /// Perfect for printing, though less convenuent for digital view.
     Gost7_32,
+    /// document will be formatted in more pleased to digital view way. 
+    /// Perfect for digital articles.
+    Modern,
 }
 
 impl fmt::Display for Style {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Gost7_32 => write!(f, "gost_7_32"),
+            Self::Modern => write!(f, "modern"),
         }
     }
 }
@@ -32,14 +36,18 @@ enum OutType {
     Html, 
     /// Create a single multipadge HTML+CSS file in output.
     /// In this out type all images will be copied to out directory.
-    HtmlPadges
+    HtmlPadges,
+    /// Create Markdown MDX tree in output
+    /// In this out type all images will be copied to out directory.
+    Markdown
 }
 
 impl fmt::Display for OutType { 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Html => write!(f, "html"),
-            Self::HtmlPadges => write!(f, "html-padges")
+            Self::HtmlPadges => write!(f, "html-padges"),
+            Self::Markdown => write!(f, "markdown")
         }
     }
 }
@@ -66,9 +74,13 @@ enum Command {
     },
     /// Build current project
     Build {
+        /// Target path. If not set, the current directory is used.
+        path: Option<PathBuf>,
+
         #[arg(value_enum, long)]
-        /// Render to differnt output type, withou changing type in 'project.toml'
-        out: Option<OutType>
+        /// Render to differnt output type, without changing type in 'project.toml'
+        out: Option<OutType>,
+
     },
     /// Add new .rush file
     Add {
@@ -142,8 +154,8 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Build { out } => {
-            match build(out) {
+        Command::Build { path, out } => {
+            match build(path, out) {
                 Ok(warnings) => {
                     for w in &warnings {
                         println!("{w:?}");
@@ -249,8 +261,8 @@ fn add(name: &str, rel_path: Option<PathBuf>) -> io::Result<String> {
 }
 
 
-fn build(redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
-    let root = env::current_dir()?;
+fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
+    let root = root.map_or(env::current_dir()?, |root| root);
     let (mut file, config_warns) = ProjectFile::load(&root).map_err(|e|
         match e.kind() {
             io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
@@ -260,10 +272,12 @@ fn build(redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
     if let Some(redef_out_type ) = redef_out_type {
         match redef_out_type {
             OutType::Html => file.config.out = rush_lib::DocOut::Html,
-            OutType::HtmlPadges => file.config.out = rush_lib::DocOut::Html
+            OutType::HtmlPadges => file.config.out = rush_lib::DocOut::Html,
+            OutType::Markdown => file.config.out = rush_lib::DocOut::Markdown
         }
     }
     
+    fs::remove_dir_all(&file.output)?;
 
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
 
@@ -272,6 +286,10 @@ fn build(redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
     for entry in file.content {
         project.add_content(entry.name, entry.path);
     }
+
+    println!("====");
+    println!("{:?}", file.config);
+    println!("====");
 
     let (out_files, build_warns) = rush_lib::build(&file.config, &project).map_err(io::Error::other)?;
     warns.extend(build_warns.into_iter().map(Warning::from));
