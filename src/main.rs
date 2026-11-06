@@ -4,9 +4,11 @@ use std::{io::Write, env, fs::{self, OpenOptions}, io, path::{Path, PathBuf}, pr
 use rush_lib::{DocStyle, Project};
 use serde::Serialize;
 
+use crate::clean::Dirs;
 use crate::config::{ConfigWarning, ContentEntry, ProjectFile, PROJECT_FILE};
 use clap::{Arg, Parser, ValueEnum, Subcommand};
 
+mod clean;
 mod config;
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -31,13 +33,12 @@ impl fmt::Display for Style {
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum OutType {
-    /// Create HTML tree in output with single CSS file.
+    /// Create HTML tree in output with single CSS file,
+    /// or one multipage HTML file if the project is single.
     /// In this out type all images will be copied to out directory.
-    Html, 
-    /// Create a single multipadge HTML+CSS file in output.
-    /// In this out type all images will be copied to out directory.
-    HtmlPadges,
-    /// Create Markdown MDX tree in output
+    Html,
+    /// Create Markdown MDX tree in output,
+    /// or one Markdown file if the project is single.
     /// In this out type all images will be copied to out directory.
     Markdown
 }
@@ -46,7 +47,6 @@ impl fmt::Display for OutType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Html => write!(f, "html"),
-            Self::HtmlPadges => write!(f, "html-padges"),
             Self::Markdown => write!(f, "markdown")
         }
     }
@@ -65,6 +65,9 @@ enum Command {
         #[arg(short, long, value_enum, default_value_t = OutType::Html)]
         /// Determines the render filetype.
         out_type: OutType,
+        #[arg(long)]
+        /// Render the whole project to one file, instead of one file per .rush file.
+        single: bool,
         #[arg(long, default_value = "src")]
         /// How to name src folder
         src_name: String,
@@ -80,6 +83,10 @@ enum Command {
         #[arg(value_enum, long)]
         /// Render to differnt output type, without changing type in 'project.toml'
         out: Option<OutType>,
+
+        #[arg(long)]
+        /// Render to one file or to one file per .rush file, without changing 'single' in 'project.toml'
+        single: Option<bool>,
 
     },
     /// Add new .rush file
@@ -134,8 +141,8 @@ impl From<rush_lib::ProjectWarning> for Warning {
 fn main() -> ExitCode {
     let args = Args::parse();
     match args.command {
-        Command::New { name, style, out_type, src_name, out_name } => {
-            if let Err(e) = new(&name, &src_name, &out_name, style, out_type) {
+        Command::New { name, style, out_type, single, src_name, out_name } => {
+            if let Err(e) = new(&name, &src_name, &out_name, style, out_type, single) {
                 eprintln!("Failed to create new project: {e}");
                 return  ExitCode::FAILURE;
             }
@@ -154,8 +161,8 @@ fn main() -> ExitCode {
                 }
             }
         }
-        Command::Build { path, out } => {
-            match build(path, out) {
+        Command::Build { path, out, single } => {
+            match build(path, out, single) {
                 Ok(warnings) => {
                     for w in &warnings {
                         println!("{w:?}");
@@ -199,7 +206,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutType) -> io::Result<()> {
+fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutType, single: bool) -> io::Result<()> {
     let mut root = env::current_dir()?;
     root.push(file_name(name)?);
     let src_dir = root.join(src_name);
@@ -208,7 +215,7 @@ fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutTy
     fs::create_dir_all(&out_dir)?;
 
     let (src_name, out_name) = (toml_str(src_name), toml_str(out_name));
-    let content = format!("[document]\nstyle=\"{style}\"\nout=\"{out_type}\"\n\n[build]\ninput={src_name}\noutput={out_name}\n\n");
+    let content = format!("[document]\nstyle=\"{style}\"\nout=\"{out_type}\"\nsingle={single}\n\n[build]\ninput={src_name}\noutput={out_name}\n\n");
     fs::write(root.join(PROJECT_FILE), content)?;
     Ok(())
 }
@@ -261,7 +268,7 @@ fn add(name: &str, rel_path: Option<PathBuf>) -> io::Result<String> {
 }
 
 
-fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>) -> io::Result<Vec<Warning>> {
+fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>, redef_single: Option<bool>) -> io::Result<Vec<Warning>> {
     let root = root.map_or(env::current_dir()?, |root| root);
     let (mut file, config_warns) = ProjectFile::load(&root).map_err(|e|
         match e.kind() {
@@ -272,13 +279,16 @@ fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>) -> io::Result<V
     if let Some(redef_out_type ) = redef_out_type {
         match redef_out_type {
             OutType::Html => file.config.out = rush_lib::DocOut::Html,
-            OutType::HtmlPadges => file.config.out = rush_lib::DocOut::Html,
             OutType::Markdown => file.config.out = rush_lib::DocOut::Markdown
         }
     }
-    
+    if let Some(single) = redef_single {
+        file.config.single = single;
+    }
+
+    let dirs = Dirs::resolve(&root, &file.input, &file.output)?;
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
-    let (mut project, project_warns) = Project::index_dir_common(&file.input)?;
+    let (mut project, project_warns) = Project::index_dir_common(&dirs.input, dirs.nested_output())?;
     warns.extend(project_warns.into_iter().map(Warning::from));
     for entry in file.content {
         project.add_content(entry.name, entry.path);
@@ -288,15 +298,24 @@ fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>) -> io::Result<V
     let (out_files, build_warns) = rush_lib::build(&file.config, &project).map_err(io::Error::other)?;
     warns.extend(build_warns.into_iter().map(Warning::from));
 
+    dirs.clean()?;
+    let mut written = Vec::with_capacity(out_files.len());
     for out in out_files {
         let dst = file.output.join(&out.path);
         create_parent(&dst)?;
         fs::write(dst, out.data)?;
+        written.push(out.path);
     }
-    for image in project.images() {
-        let dst = file.output.join(image);
-        create_parent(&dst)?;
-        fs::copy(file.input.join(image), dst)?;
+    if !dirs.same() {
+        for image in project.images() {
+            let dst = file.output.join(image);
+            create_parent(&dst)?;
+            fs::copy(file.input.join(image), dst)?;
+            written.push(image.to_owned());
+        }
+    }
+    if dirs.overlap() {
+        dirs.save_manifest(&written)?;
     }
     Ok(warns)
 }

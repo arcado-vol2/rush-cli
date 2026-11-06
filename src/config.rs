@@ -16,7 +16,6 @@ fn style_from_name(name: &str) -> Option<DocStyle> {
 fn out_from_name(name: &str) -> Option<DocOut> {
     match name {
         "html" => Some(DocOut::Html),
-        "html-padges" => Some(DocOut::HtmlPaged),
         "markdown" => Some(DocOut::Markdown),
         "pdf" => Some(DocOut::Pdf),
         "odt" => Some(DocOut::Odt),
@@ -36,7 +35,6 @@ fn style_name(style: DocStyle) -> &'static str {
 fn out_name(out: DocOut) -> &'static str {
     match out {
         DocOut::Html => "html",
-        DocOut::HtmlPaged => "html-padges",
         DocOut::Markdown => "markdown",
         DocOut::Pdf => "pdf",
         DocOut::Odt => "odt",
@@ -95,7 +93,8 @@ struct RawProjectFile {
 #[serde(default)]
 struct RawDocument {
     style: Option<toml::Value>,
-    out: Option<toml::Value>
+    out: Option<toml::Value>,
+    single: Option<toml::Value>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -117,6 +116,7 @@ struct OutProjectFile<'a> {
 struct OutDocument {
     style: &'static str,
     out: &'static str,
+    single: bool,
 }
 
 #[derive(Serialize)]
@@ -139,6 +139,7 @@ impl ProjectFile {
             document: OutDocument {
                 style: style_name(self.config.style),
                 out: out_name(self.config.out),
+                single: self.config.single,
             },
             build: OutBuild {
                 input: relative_to(&self.input, root),
@@ -172,6 +173,9 @@ impl ProjectFile {
         if let Some(doc_out) = enum_param(raw.document.out, "document.out", out_from_name, &mut warnings) {
             out.config.out = doc_out;
         }
+        if let Some(single) = bool_param(raw.document.single, "document.single", &mut warnings) {
+            out.config.single = single;
+        }
         if let Some(input) = path_param(raw.build.input, "build.input", &mut warnings, true) {
             out.input = input;
         }
@@ -202,6 +206,16 @@ fn path_param(
             None
         }
         toml::Value::String(s) => Some(PathBuf::from(s)),
+        _ => {
+            warnings.push(ConfigWarning::WrongType { key });
+            None
+        }
+    }
+}
+
+fn bool_param(value: Option<toml::Value>, key: &'static str, warnings: &mut Vec<ConfigWarning>) -> Option<bool> {
+    match value? {
+        toml::Value::Boolean(b) => Some(b),
         _ => {
             warnings.push(ConfigWarning::WrongType { key });
             None
@@ -352,8 +366,32 @@ out = true", DocOut::Html, vec![ConfigWarning::WrongType { key: "document.out" }
         let (out, w) = ProjectFile::parse("[document]
 style = \"modern\"
 out = \"pdf\"");
-        assert_eq!(out, ProjectFile { config: Config { style: DocStyle::Modern, out: DocOut::Pdf }, ..ProjectFile::default() });
+        assert_eq!(out, ProjectFile { config: Config { style: DocStyle::Modern, out: DocOut::Pdf, single: false }, ..ProjectFile::default() });
         assert!(w.is_empty());
+    }
+
+    #[test]
+    fn single_value() {
+        let (out, w) = ProjectFile::parse("[document]\nsingle = true");
+        assert!(out.config.single);
+        assert!(w.is_empty());
+        assert!(!ProjectFile::parse("").0.config.single);
+    }
+
+    #[test]
+    fn single_wrong_type_falls_back() {
+        let (out, w) = ProjectFile::parse("[document]\nsingle = \"да\"");
+        assert!(!out.config.single);
+        assert_eq!(w, vec![ConfigWarning::WrongType { key: "document.single" }]);
+    }
+
+    #[test]
+    fn html_padges_is_unknown() {
+        check_out(
+            "[document]\nout = \"html-padges\"",
+            DocOut::Html,
+            vec![ConfigWarning::UnknownValue { key: "document.out", value: "html-padges".into() }],
+        );
     }
 
 
@@ -460,7 +498,7 @@ path = \"d\"");
         fs::create_dir_all(&root).unwrap();
         let abs = std::env::temp_dir().join("abs_out");
         let project = ProjectFile {
-            config: Config { style: DocStyle::Light, out: DocOut::HtmlPaged },
+            config: Config { style: DocStyle::Light, out: DocOut::Html, single: true },
             input: root.join("text"),
             output: abs.clone(),
             content: vec![entry("Введение", "intro"), entry("Установка", "guide/install.rush")],
