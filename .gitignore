@@ -1,2 +1,6 @@
 /target
 /output
+/sandbox
+/readme-example/README.md
+/readme-example/fonts/
+/readme-example/.rush-build

@@ -72,7 +72,7 @@ impl Default for ProjectFile {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ConfigWarning {
-    Unreadable(String),
+    _Unreadable(String),
     InvalidToml(String),
     WrongType { key: &'static str },
     UnknownValue { key: &'static str, value: String },
@@ -83,7 +83,7 @@ pub(crate) enum ConfigWarning {
 }
 
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(default)]
 struct RawProjectFile {
     document: RawDocument,
@@ -91,14 +91,14 @@ struct RawProjectFile {
     content: Option<toml::Value>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(default)]
 struct RawDocument {
     style: Option<toml::Value>,
     out: Option<toml::Value>
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 #[serde(default)]
 struct RawBuild {
     input: Option<toml::Value>,
@@ -165,7 +165,6 @@ impl ProjectFile {
                 return (ProjectFile::default(), warnings);
             }
         };
-
         let mut out = ProjectFile::default();
         if let Some(style) = enum_param(raw.document.style, "document.style", style_from_name, &mut warnings) {
             out.config.style = style;
@@ -173,10 +172,10 @@ impl ProjectFile {
         if let Some(doc_out) = enum_param(raw.document.out, "document.out", out_from_name, &mut warnings) {
             out.config.out = doc_out;
         }
-        if let Some(input) = path_param(raw.build.input, "build.input", &mut warnings) {
+        if let Some(input) = path_param(raw.build.input, "build.input", &mut warnings, true) {
             out.input = input;
         }
-        if let Some(output) = path_param(raw.build.output, "build.output", &mut warnings) {
+        if let Some(output) = path_param(raw.build.output, "build.output", &mut warnings, true) {
             out.output = output;
         }
         if let Some(content) = raw.content {
@@ -195,9 +194,10 @@ fn path_param(
     value: Option<toml::Value>,
     key: &'static str,
     warnings: &mut Vec<ConfigWarning>,
+    allow_empty: bool,
 ) -> Option<PathBuf> {
     match value? {
-        toml::Value::String(s) if s.is_empty() => {
+        toml::Value::String(s) if s.is_empty() && !allow_empty => {
             warnings.push(ConfigWarning::EmptyPath { key });
             None
         }
