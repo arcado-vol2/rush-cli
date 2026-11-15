@@ -1,0 +1,27 @@
+[document]
+style="blog"
+out="html"
+single=false
+no_js=false
+theme="auto"
+
+[build]
+input="src"
+output="out"
+
+
+[[content]]
+name = "Основная страница"
+path = "main.rush"
+
+[[content]]
+name = "Страница пример внутренней ссылки"
+path = "second.rush"
+
+[[dirs]]
+name = "Директория"
+path = "dir"
+
+[[content]]
+name = "Третий"
+path = "dir/third.rush"

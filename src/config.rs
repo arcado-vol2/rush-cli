@@ -1,5 +1,5 @@
 use std::{fs, io, path::{Path, PathBuf}};
-use rush_lib::{Config, DocOut, DocStyle};
+use rush_lib::{Config, DocOut, DocStyle, Theme};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const PROJECT_FILE: &str = "project.toml";
@@ -8,8 +8,25 @@ fn style_from_name(name: &str) -> Option<DocStyle> {
     match name {
         "gost_7_32" => Some(DocStyle::Gost7_32),
         "modern" => Some(DocStyle::Modern),
-        "light" => Some(DocStyle::Light),
+        "blog" => Some(DocStyle::Blog),
         _ => None,
+    }
+}
+
+fn theme_from_name(name: &str) -> Option<Theme> {
+    match name {
+        "auto" => Some(Theme::Auto),
+        "light" => Some(Theme::Light),
+        "dark" => Some(Theme::Dark),
+        _ => None,
+    }
+}
+
+pub(crate) fn theme_name(theme: Theme) -> &'static str {
+    match theme {
+        Theme::Auto => "auto",
+        Theme::Light => "light",
+        Theme::Dark => "dark",
     }
 }
 
@@ -28,7 +45,7 @@ fn style_name(style: DocStyle) -> &'static str {
     match style {
         DocStyle::Gost7_32 => "gost_7_32",
         DocStyle::Modern => "modern",
-        DocStyle::Light => "light",
+        DocStyle::Blog => "blog",
     }
 }
 
@@ -48,12 +65,19 @@ pub(crate) struct ProjectFile {
     pub(crate) input: PathBuf,
     pub(crate) output: PathBuf,
     pub(crate) content: Vec<ContentEntry>,
+    pub(crate) dirs: Vec<ContentEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ContentEntry {
     pub(crate) name: String,
     pub(crate) path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Named {
+    Content(usize),
+    Dir(usize),
 }
 
 impl Default for ProjectFile {
@@ -63,6 +87,7 @@ impl Default for ProjectFile {
             input: PathBuf::from("src"),
             output: PathBuf::from("out"),
             content: Vec::new(),
+            dirs: Vec::new(),
         }
     }
 }
@@ -78,6 +103,9 @@ pub(crate) enum ConfigWarning {
     ContentMissingKey { index: usize, key: &'static str },
     ContentWrongType { index: usize, key: &'static str },
     ContentEmptyPath { index: usize },
+    DirsMissingKey { index: usize, key: &'static str },
+    DirsWrongType { index: usize, key: &'static str },
+    DirsEmptyPath { index: usize },
 }
 
 
@@ -87,6 +115,7 @@ struct RawProjectFile {
     document: RawDocument,
     build: RawBuild,
     content: Option<toml::Value>,
+    dirs: Option<toml::Value>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -95,6 +124,8 @@ struct RawDocument {
     style: Option<toml::Value>,
     out: Option<toml::Value>,
     single: Option<toml::Value>,
+    no_js: Option<toml::Value>,
+    theme: Option<toml::Value>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -110,6 +141,8 @@ struct OutProjectFile<'a> {
     build: OutBuild,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     content: &'a Vec<ContentEntry>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dirs: &'a Vec<ContentEntry>,
 }
 
 #[derive(Serialize)]
@@ -117,6 +150,8 @@ struct OutDocument {
     style: &'static str,
     out: &'static str,
     single: bool,
+    no_js: bool,
+    theme: &'static str,
 }
 
 #[derive(Serialize)]
@@ -126,7 +161,8 @@ struct OutBuild {
 }
 
 fn relative_to(path: &Path, root: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned()
+    let rel = path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned();
+    if rel.is_empty() { ".".into() } else { rel }
 }
 
 impl ProjectFile {
@@ -140,14 +176,17 @@ impl ProjectFile {
                 style: style_name(self.config.style),
                 out: out_name(self.config.out),
                 single: self.config.single,
+                no_js: self.config.no_js,
+                theme: theme_name(self.config.theme),
             },
             build: OutBuild {
                 input: relative_to(&self.input, root),
                 output: relative_to(&self.output, root),
             },
             content: &self.content,
+            dirs: &self.dirs,
         };
-        toml::to_string(&raw).expect("ProjectFile всегда сериализуется в TOML")
+        toml::to_string(&raw).expect("ProjectFile must be serialesable  to TOML")
     }
 
     pub(crate) fn load(root: &Path) -> io::Result<(ProjectFile, Vec<ConfigWarning>)> {
@@ -176,16 +215,38 @@ impl ProjectFile {
         if let Some(single) = bool_param(raw.document.single, "document.single", &mut warnings) {
             out.config.single = single;
         }
-        if let Some(input) = path_param(raw.build.input, "build.input", &mut warnings, true) {
+        if let Some(no_js) = bool_param(raw.document.no_js, "document.no_js", &mut warnings) {
+            out.config.no_js = no_js;
+        }
+        if let Some(theme) = enum_param(raw.document.theme, "document.theme", theme_from_name, &mut warnings) {
+            out.config.theme = theme;
+        }
+        if let Some(input) = path_param(raw.build.input, "build.input", &mut warnings) {
             out.input = input;
         }
-        if let Some(output) = path_param(raw.build.output, "build.output", &mut warnings, true) {
+        if let Some(output) = path_param(raw.build.output, "build.output", &mut warnings) {
             out.output = output;
         }
         if let Some(content) = raw.content {
-            out.content = content_param(content, &mut warnings);
+            out.content = entries_param(content, "content", &mut warnings);
+        }
+        if let Some(dirs) = raw.dirs {
+            out.dirs = entries_param(dirs, "dirs", &mut warnings);
         }
         (out, warnings)
+    }
+
+    pub(crate) fn find_name(&self, name: &str) -> Vec<Named> {
+        let content = self.content.iter().enumerate().filter(|(_, e)| e.name == name).map(|(i, _)| Named::Content(i));
+        let dirs = self.dirs.iter().enumerate().filter(|(_, e)| e.name == name).map(|(i, _)| Named::Dir(i));
+        content.chain(dirs).collect()
+    }
+
+    pub(crate) fn entry_mut(&mut self, at: Named) -> &mut ContentEntry {
+        match at {
+            Named::Content(i) => &mut self.content[i],
+            Named::Dir(i) => &mut self.dirs[i],
+        }
     }
     
     pub(crate) fn remove_content_by_name(&mut self, name: &str) -> Option<(usize, ContentEntry)> {
@@ -198,10 +259,9 @@ fn path_param(
     value: Option<toml::Value>,
     key: &'static str,
     warnings: &mut Vec<ConfigWarning>,
-    allow_empty: bool,
 ) -> Option<PathBuf> {
     match value? {
-        toml::Value::String(s) if s.is_empty() && !allow_empty => {
+        toml::Value::String(s) if s.is_empty() => {
             warnings.push(ConfigWarning::EmptyPath { key });
             None
         }
@@ -223,32 +283,36 @@ fn bool_param(value: Option<toml::Value>, key: &'static str, warnings: &mut Vec<
     }
 }
 
-fn content_param(value: toml::Value, warnings: &mut Vec<ConfigWarning>) -> Vec<ContentEntry> {
+fn entries_param(value: toml::Value, key: &'static str, warnings: &mut Vec<ConfigWarning>) -> Vec<ContentEntry> {
     let toml::Value::Array(items) = value else {
-        warnings.push(ConfigWarning::WrongType { key: "content" });
+        warnings.push(ConfigWarning::WrongType { key });
         return Vec::new();
     };
+    let dirs = key == "dirs";
     let mut out = Vec::new();
     for (index, item) in items.into_iter().enumerate() {
         let toml::Value::Table(mut table) = item else {
-            warnings.push(ConfigWarning::WrongType { key: "content" });
+            warnings.push(ConfigWarning::WrongType { key });
             continue;
         };
-        let mut get = |key: &'static str| match table.remove(key) {
+        let mut get = |field: &'static str| match table.remove(field) {
             Some(toml::Value::String(s)) => Some(s),
             Some(_) => {
-                warnings.push(ConfigWarning::ContentWrongType { index, key });
+                warnings.push(if dirs { ConfigWarning::DirsWrongType { index, key: field } } else { ConfigWarning::ContentWrongType { index, key: field } });
                 None
             }
             None => {
-                warnings.push(ConfigWarning::ContentMissingKey { index, key });
+                warnings.push(if dirs { ConfigWarning::DirsMissingKey { index, key: field } } else { ConfigWarning::ContentMissingKey { index, key: field } });
                 None
             }
         };
         let (name, path) = (get("name"), get("path"));
-        let (Some(name), Some(path)) = (name, path) else { continue };
+        let (Some(name), Some(mut path)) = (name, path) else { continue };
+        if dirs {
+            path = path.trim_end_matches(['/', '\\']).to_string();
+        }
         if path.is_empty() {
-            warnings.push(ConfigWarning::ContentEmptyPath { index });
+            warnings.push(if dirs { ConfigWarning::DirsEmptyPath { index } } else { ConfigWarning::ContentEmptyPath { index } });
             continue;
         }
         out.push(ContentEntry { name, path });
@@ -291,28 +355,29 @@ mod tests {
     fn valid_values() {
         check("[document]\nstyle = \"gost_7_32\"", DocStyle::Gost7_32, vec![]);
         check("[document]\nstyle = \"modern\"", DocStyle::Modern, vec![]);
-        check("[document]\nstyle = \"light\"", DocStyle::Light, vec![]);
+        check("[document]\nstyle = \"blog\"", DocStyle::Blog, vec![]);
     }
 
     #[test]
     fn missing_is_default_without_warnings() {
-        check("", DocStyle::Gost7_32, vec![]);
-        check("[document]", DocStyle::Gost7_32, vec![]);
-        check("[other]\nx = 1", DocStyle::Gost7_32, vec![]);
+        check("", DocStyle::Blog, vec![]);
+        check("[document]", DocStyle::Blog, vec![]);
+        check("[other]\nx = 1", DocStyle::Blog, vec![]);
     }
 
     #[test]
     fn unknown_value_falls_back() {
         check(
             "[document]\nstyle = \"Gost\"",
-            DocStyle::Gost7_32,
+            DocStyle::Blog,
             vec![ConfigWarning::UnknownValue { key: "document.style", value: "Gost".into() }],
         );
     }
 
     #[test]
     fn wrong_type_falls_back() {
-        check("[document]\nstyle = 5", DocStyle::Gost7_32, vec![ConfigWarning::WrongType { key: "document.style" }]);
+        check("[document]\nstyle = 5", DocStyle::Blog, vec![ConfigWarning::WrongType { key: "document.style" }]);
+        check("[document]\nstyle = \"light\"", DocStyle::Blog, vec![ConfigWarning::UnknownValue { key: "document.style", value: "light".into() }]);
     }
 
     #[test]
@@ -366,7 +431,7 @@ out = true", DocOut::Html, vec![ConfigWarning::WrongType { key: "document.out" }
         let (out, w) = ProjectFile::parse("[document]
 style = \"modern\"
 out = \"pdf\"");
-        assert_eq!(out, ProjectFile { config: Config { style: DocStyle::Modern, out: DocOut::Pdf, single: false }, ..ProjectFile::default() });
+        assert_eq!(out, ProjectFile { config: Config { style: DocStyle::Modern, out: DocOut::Pdf, ..Config::default() }, ..ProjectFile::default() });
         assert!(w.is_empty());
     }
 
@@ -498,10 +563,11 @@ path = \"d\"");
         fs::create_dir_all(&root).unwrap();
         let abs = std::env::temp_dir().join("abs_out");
         let project = ProjectFile {
-            config: Config { style: DocStyle::Light, out: DocOut::Html, single: true },
+            config: Config { style: DocStyle::Blog, out: DocOut::Html, single: true, no_js: true, theme: Theme::Dark },
             input: root.join("text"),
             output: abs.clone(),
             content: vec![entry("Введение", "intro"), entry("Установка", "guide/install.rush")],
+            dirs: vec![entry("Руководство", "guide")],
         };
 
         project.save(&root).unwrap();
@@ -511,5 +577,59 @@ path = \"d\"");
         assert!(saved.contains("input = \"text\""), "{saved}");
         assert_eq!(loaded, project);
         assert!(w.is_empty());
+    }
+
+    #[test]
+    fn no_js_and_theme() {
+        let (out, w) = ProjectFile::parse("[document]\nno_js = true\ntheme = \"dark\"");
+        assert!(out.config.no_js);
+        assert_eq!(out.config.theme, Theme::Dark);
+        assert!(w.is_empty());
+
+        let (out, _) = ProjectFile::parse("");
+        assert!(!out.config.no_js);
+        assert_eq!(out.config.theme, Theme::Auto);
+
+        let (out, w) = ProjectFile::parse("[document]\nno_js = \"да\"\ntheme = \"night\"");
+        assert!(!out.config.no_js);
+        assert_eq!(out.config.theme, Theme::Auto);
+        assert_eq!(w, vec![
+            ConfigWarning::WrongType { key: "document.no_js" },
+            ConfigWarning::UnknownValue { key: "document.theme", value: "night".into() },
+        ]);
+    }
+
+    #[test]
+    fn dirs_entries() {
+        let (out, w) = ProjectFile::parse("[[dirs]]\nname = \"Руководство\"\npath = \"guide/\"\n[[dirs]]\npath = \"a\"\n[[dirs]]\nname = \"B\"\npath = 2\n[[dirs]]\nname = \"C\"\npath = \"/\"");
+        assert_eq!(out.dirs, vec![entry("Руководство", "guide")]);
+        assert_eq!(w, vec![
+            ConfigWarning::DirsMissingKey { index: 1, key: "name" },
+            ConfigWarning::DirsWrongType { index: 2, key: "path" },
+            ConfigWarning::DirsEmptyPath { index: 3 },
+        ]);
+    }
+
+    #[test]
+    fn find_name_in_content_then_dirs() {
+        let project = ProjectFile {
+            content: vec![entry("A", "a"), entry("B", "b")],
+            dirs: vec![entry("A", "x"), entry("C", "c")],
+            ..ProjectFile::default()
+        };
+        assert_eq!(project.find_name("A"), vec![Named::Content(0), Named::Dir(0)]);
+        assert_eq!(project.find_name("C"), vec![Named::Dir(1)]);
+        assert!(project.find_name("Z").is_empty());
+    }
+
+    #[test]
+    fn project_root_saved_as_dot() {
+        let root = PathBuf::from("root");
+        let project = ProjectFile { input: root.clone(), output: root.join("out"), ..ProjectFile::default() };
+        let src = project.to_toml(&root);
+        assert!(src.contains("input = \".\""), "{src}");
+        let (out, w) = ProjectFile::parse(&src);
+        assert_eq!(out.input, PathBuf::from("."));
+        assert!(w.is_empty(), "{w:?}");
     }
 }

@@ -1,6 +1,6 @@
-#define AppName      "rush-cli"
+#define AppName      "rush"
 #define AppPublisher "arcado"
-#define AppExeName   "rush-cli.exe"
+#define AppExeName   "rush.exe"
 #define AppExe = "target\release\" + AppExeName
 
 #ifndef AppVersion

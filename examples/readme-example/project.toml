@@ -3,8 +3,8 @@ style = "modern"
 out = "markdown"
 
 [build]
-input = ""
-output = ""
+input = "."
+output = "."
 
 [[content]]
 name = "README"
