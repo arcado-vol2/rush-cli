@@ -1,0 +1,16 @@
+document:
+  style: blog
+  out: markdown
+  single: false
+  no_js: false
+  theme: auto
+build:
+  input: .
+  output: ../..
+content:
+- kind: file
+  name: rush
+  path: README.rush
+- kind: file
+  name: rush
+  path: README_EN.rush

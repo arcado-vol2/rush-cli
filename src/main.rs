@@ -1,11 +1,10 @@
 use core::fmt;
-use std::{io::Write, env, fs::{self, OpenOptions}, io, path::{Path, PathBuf}, process::ExitCode, slice};
+use std::{error::Error, env, fs::{self, OpenOptions}, io, path::{Path, PathBuf}, process::ExitCode};
 
-use rush_lib::{Project, Theme};
-use serde::Serialize;
+use rush_lib::{Config, ConfigConst, DocOut, DocStyle, Project, Theme};
 
-use crate::clean::Dirs;
-use crate::config::{ConfigWarning, ContentEntry, Named, ProjectFile, PROJECT_FILE};
+use crate::{AddError::UnsupportedExtension, clean::Dirs};
+use crate::config::{ConfigWarning, ContentEntry, ContentEntryKind, ProjectFile, PROJECT_FILE};
 use clap::{Parser, ValueEnum, Subcommand};
 
 mod clean;
@@ -16,7 +15,7 @@ enum Style {
     /// Pure GOST 7.32: the external standard for academic and scientific papers printed on A4.
     Gost7_32,
     /// Readable academic paper: prints on A4 as well as GOST 7.32,
-    /// but with serif text and warm markers the eye catches easily.
+    /// but with sans-serif text and warm markers the eye catches easily.
     Modern,
     /// Main modern web format: documentation, technical books and articles.
     /// Supports light and dark themes.
@@ -26,7 +25,7 @@ enum Style {
 impl fmt::Display for Style {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Gost7_32 => write!(f, "gost_7_32"),
+            Self::Gost7_32 => write!(f, "gost7-32"),
             Self::Modern => write!(f, "modern"),
             Self::Blog => write!(f, "blog"),
         }
@@ -51,6 +50,7 @@ impl From<ThemeArg> for Theme {
         }
     }
 }
+
 
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -109,28 +109,29 @@ enum Command {
         path: Option<PathBuf>,
 
         #[arg(value_enum, long)]
-        /// Render to differnt output type, without changing type in 'project.toml'
+        /// Render to different output type, without changing type in 'project.yaml'
         out: Option<OutType>,
 
         #[arg(long)]
-        /// Render to one file or to one file per .rush file, without changing 'single' in 'project.toml'
+        /// Render to one file or to one file per .rush file, without changing 'single' in 'project.yaml'
         single: Option<bool>,
 
         #[arg(long)]
-        /// Render with or without scripts, without changing 'no_js' in 'project.toml'
+        /// Render with or without scripts, without changing 'no_js' in 'project.yaml'
         no_js: Option<bool>,
 
         #[arg(value_enum, long)]
-        /// Render with another theme, without changing 'theme' in 'project.toml'
+        /// Render with another theme, without changing 'theme' in 'project.yaml'
         theme: Option<ThemeArg>,
 
     },
     /// Add new .rush file, or a folder with --dir
     Add {
-        /// Name of the new file or folder
-        name: String,
-        /// Relative path to new file, from src. If not set will be crated in src root. With filename same as 'name'
-        path: Option<PathBuf>,
+        /// Relative path to new file, from src. If set dir that exists in project.yaml will add file to it,
+        /// otherwise will add it to project root, no matter of filepath.
+        path: PathBuf,
+        /// Name of the new file or folder. If it is not specified, an object will be created with a name that matches the original file name.
+        name: Option<String>,
         #[arg(long)]
         /// Create a folder and give it the name in the menu
         dir: bool,
@@ -195,7 +196,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         },
         Command::Add { name, path, dir } => {
-            match add(&name, path, dir) {
+            match add(name.as_deref(), path, dir) {
                 Ok(path) => {
                     println!("Successfully added new {}: '{path}'", if dir { "folder" } else { "file" });
                     return ExitCode::SUCCESS;
@@ -224,11 +225,11 @@ fn main() -> ExitCode {
                     for w in &warnings {
                         println!("{w:?}");
                     }
-                    println!("Project builded! {} warinings", warnings.len());
+                    println!("Project has been built.! {} warinings", warnings.len());
                     return ExitCode::SUCCESS;
                 },
                 Err(e) => {
-                    eprintln!("Failed to build a project: {e}");
+                    eprintln!("Failed to build project: {e}");
                     return  ExitCode::FAILURE;
                 }
             }
@@ -272,15 +273,22 @@ fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutTy
     fs::create_dir_all(&src_dir)?;
     fs::create_dir_all(&out_dir)?;
 
-    let (src_name, out_name) = (toml_str(src_name), toml_str(out_name));
-    let theme = config::theme_name(theme.into());
-    let content = format!("[document]\nstyle=\"{style}\"\nout=\"{out_type}\"\nsingle={single}\nno_js={no_js}\ntheme=\"{theme}\"\n\n[build]\ninput={src_name}\noutput={out_name}\n\n");
-    fs::write(root.join(PROJECT_FILE), content)?;
-    Ok(())
+    println!("{:?}", style.to_string());
+    let config = Config {
+        style: DocStyle::from_name(&style.to_string()).expect("every Style has a DocStyle"),
+        out: DocOut::from_name(&out_type.to_string()).expect("every OutType has a DocOut"),
+        single,
+        no_js,
+        theme: theme.into(),
+    };
+    ProjectFile { config, input: src_dir, output: out_dir, content: Vec::new() }.save(&root)
 }
 
-fn toml_str(s: &str) -> String {
-    toml::Value::from(s).to_string()
+fn load_project(root: &Path) -> io::Result<ProjectFile> {
+    ProjectFile::load(root).map(|(project, _)| project).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush new <NAME>'")),
+        _ => e,
+    })
 }
 
 fn file_name(name: &str) -> io::Result<String> {
@@ -296,52 +304,92 @@ fn slashed(path: &Path) -> String {
     path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
 }
 
-#[derive(Serialize)]
-struct ContentAppend<'a> {
-    content: &'a [ContentEntry],
+#[derive(Debug)]
+enum AddError {
+    Io(io::Error),
+    UnsupportedExtension(String)
 }
-
-#[derive(Serialize)]
-struct DirsAppend<'a> {
-    dirs: &'a [ContentEntry],
-}
-
-fn add(name: &str, rel_path: Option<PathBuf>, dir: bool) -> io::Result<String> {
-    let root = env::current_dir()?;
-    let mut proj_file = OpenOptions::new().append(true).open(PROJECT_FILE).map_err(|e| match e.kind() {
-        io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
-        _ => e,
-    })?;
-
-    if dir {
-        let rel = match rel_path {
-            Some(path) => path,
-            None => PathBuf::from(file_name(name)?),
-        };
-        let (project, _) = ProjectFile::load(&root)?;
-        fs::create_dir_all(project.input.join(&rel))?;
-        let path = slashed(&rel);
-        let entry = ContentEntry { name: name.to_owned(), path: path.clone() };
-        let table = toml::to_string(&DirsAppend { dirs: slice::from_ref(&entry) }).map_err(io::Error::other)?;
-        write!(proj_file, "\n{table}")?;
-        return Ok(path);
+impl From<io::Error> for AddError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
     }
-    let rel = match rel_path {
-        Some(mut path) => {
-            path.set_extension("rush");
-            path
+}
+impl fmt::Display for AddError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "input-output error: {err}"),
+            Self::UnsupportedExtension(ext) => write!(f, "unsupported extension error, got: {ext}")
         }
-        None => PathBuf::from(format!("{}.rush", file_name(name)?)),
-    };
-    let (project, _) = ProjectFile::load(&root)?;
-    let path = project.input.join(&rel);
-    create_parent(&path)?;
-    OpenOptions::new().write(true).create_new(true).open(&path)?;
-    let path = slashed(&rel);
-    let entry = ContentEntry { name: name.to_owned(), path: path.clone()};
-    let table = toml::to_string(&ContentAppend { content: slice::from_ref(&entry) }).map_err(io::Error::other)?;
-    write!(proj_file, "\n{table}")?;
+    }
+}
+
+impl Error for AddError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::UnsupportedExtension(_) => None
+        }
+    }
+}
+
+
+/// Creates the file or folder on disk and puts its entry into the content of the folder entry
+/// that holds it, or into the root content when no folder entry holds it.
+fn add(name: Option<&str>, rel_path: PathBuf, dir: bool) -> Result<String, AddError> {
+    let root = env::current_dir()?;
+    let mut project = load_project(&root)?;
+    let path = add_in(&mut project, name, rel_path, dir)?;
+    project.save(&root)?;
     Ok(path)
+}
+
+
+fn add_in(project: &mut ProjectFile, name: Option<&str>, rel: PathBuf, dir: bool) -> Result<String, AddError> {
+    let entry = if dir {
+        let path = slashed(&rel);
+        if project.find_dir_path(&path).is_some() {
+            return  Err(AddError::Io(io::Error::new(io::ErrorKind::AlreadyExists, format!("folder ./{path} is already in content"))));
+        }
+        fs::create_dir_all(project.input.join(&rel))?;
+        let name = match name {
+            Some(name) => name,
+            None => rel.file_stem().and_then(|s| s.to_str()).unwrap()
+        };
+        ContentEntry::dir(name, path, Vec::new())
+    } else {
+        let mut rel = rel;
+        match rel.extension() {
+            None => {rel.set_extension("rush");},
+            Some(ext) if ext == "rush" => {},
+            Some(ext) => return Err(UnsupportedExtension(ext.to_string_lossy().to_string()))
+        }
+        let full = project.input.join(&rel);
+        create_parent(&full)?;
+        OpenOptions::new().write(true).create_new(true).open(&full)?;
+        let name = match name {
+            Some(name) => name,
+            None => rel.file_stem().and_then(|s| s.to_str()).unwrap()
+        };
+        ContentEntry::file(name, slashed(&rel))
+    };
+    let path = entry.path.clone();
+    project.insert_entry(entry);
+    Ok(path)
+}
+
+
+fn handle_content(data: Vec<ContentEntry>, project: &mut Project) {
+    for entry in data {
+        match entry.kind {
+            ContentEntryKind::Dir { childs } => {
+                project.add_dir(entry.name, entry.path);
+                handle_content(childs, project);
+            }
+            ContentEntryKind::File => {
+                project.add_content(entry.name, entry.path);   
+            }
+        }
+    }
 }
 
 
@@ -373,16 +421,10 @@ fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>, redef_single: O
     let mut warns: Vec<Warning> = config_warns.into_iter().map(Warning::from).collect();
     let (mut project, project_warns) = Project::index_dir_common(&dirs.input, dirs.nested_output())?;
     warns.extend(project_warns.into_iter().map(Warning::from));
-    for entry in file.content {
-        project.add_content(entry.name, entry.path);
-    }
-    for entry in file.dirs {
-        project.add_dir(entry.name, entry.path);
-    }
-
-
+    handle_content(file.content, &mut project);
     let (out_files, build_warns) = rush_lib::build(&file.config, &project).map_err(io::Error::other)?;
     warns.extend(build_warns.into_iter().map(Warning::from));
+    
 
     dirs.clean()?;
     let mut written = Vec::with_capacity(out_files.len());
@@ -421,22 +463,24 @@ enum Removed {
 
 fn remove(name: &str) -> io::Result<Removed> {
     let root = env::current_dir()?;
-    let (mut project, _) = ProjectFile::load(&root).map_err(|e|
-        match e.kind() {
-            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
-            _ => e,
+    let mut project = load_project(&root)?;
+    let files: Vec<_> = project.find_name(name).into_iter().filter(|at| !project.entry(at).is_dir()).collect();
+    let pos = match files.as_slice() {
+        [] => return Ok(Removed::NotInProject),
+        [at] => at.clone(),
+        many => {
+            let places: Vec<_> = many.iter().map(|at| format!("file ./{}", project.entry(at).path)).collect();
+            return Err(ambiguous(name, &places));
         }
-    )?;
-    let Some((pos, entry)) = project.remove_content_by_name(name) else {
-        return Ok(Removed::NotInProject);
     };
+    let entry = project.remove_at(&pos);
     project.save(&root)?;
 
     match fs::remove_file(project.input.join(&entry.path)) {
         Ok(()) => Ok(Removed::Deleted),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Removed::MissingOnDisk),
         Err(e) => {
-            project.content.insert(pos, entry);
+            project.insert_at(&pos, entry);
             match project.save(&root) {
                 Ok(()) => Err(e),
                 Err(save_err) => Err(io::Error::new(
@@ -478,25 +522,27 @@ fn rename_in(project: &mut ProjectFile, old_name: &str, new_name: &str) -> io::R
     let found = project.find_name(old_name);
     match found.as_slice() {
         [at] => {
-            let entry = project.entry_mut(*at);
+            let entry = project.entry_mut(at);
             entry.name = new_name.to_owned();
             Ok(entry.path.clone())
         }
         [] => {
+            // A folder on disk that is not in content yet: add it to content with the new name
             let on_disk = dirs_named(&project.input, &project.output, old_name)?;
+            let on_disk: Vec<_> = on_disk.into_iter().filter(|p| project.find_dir_path(p).is_none()).collect();
             match on_disk.as_slice() {
                 [path] => {
-                    project.dirs.push(ContentEntry { name: new_name.to_owned(), path: path.clone() });
+                    project.insert_entry(ContentEntry::dir(new_name, path.clone(), Vec::new()));
                     Ok(path.clone())
                 }
-                [] => Err(io::Error::new(io::ErrorKind::NotFound, format!("'{old_name}' not found in content, dirs or source folders"))),
+                [] => Err(io::Error::new(io::ErrorKind::NotFound, format!("'{old_name}' not found in content or source folders"))),
                 many => Err(ambiguous(old_name, &many.iter().map(|p| format!("folder ./{p}")).collect::<Vec<_>>())),
             }
         }
         many => {
-            let places: Vec<String> = many.iter().map(|at| match at {
-                Named::Content(i) => format!("content ./{}", project.content[*i].path),
-                Named::Dir(i) => format!("dirs ./{}", project.dirs[*i].path),
+            let places: Vec<String> = many.iter().map(|at| {
+                let entry = project.entry(at);
+                format!("{} ./{}", if entry.is_dir() { "folder" } else { "file" }, entry.path)
             }).collect();
             Err(ambiguous(old_name, &places))
         }
@@ -505,41 +551,34 @@ fn rename_in(project: &mut ProjectFile, old_name: &str, new_name: &str) -> io::R
 
 fn rename(old_name: &str, new_name: &str) -> io::Result<String> {
     let root = env::current_dir()?;
-    let (mut project, _) = ProjectFile::load(&root).map_err(|e|
-        match e.kind() {
-            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
-            _ => e,
-        }
-    )?;
+    let mut project = load_project(&root)?;
     let path = rename_in(&mut project, old_name, new_name)?;
     project.save(&root)?;
     Ok(path)
 }
 
-fn list() -> io::Result<()>{
-    let root = env::current_dir()?;
-    let (project, _) = ProjectFile::load(&root).map_err(|e|
-        match e.kind() {
-            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
-            _ => e,
+fn list() -> io::Result<()> {
+    fn print(entries: &[ContentEntry], depth: usize) {
+        for entry in entries {
+            let indent = "  ".repeat(depth);
+            match &entry.kind {
+                ContentEntryKind::File => println!("{indent}\"{}\": ./{}", entry.name, entry.path),
+                ContentEntryKind::Dir { childs } => {
+                    println!("{indent}\"{}\": ./{}/", entry.name, entry.path);
+                    print(childs, depth + 1);
+                }
+            }
         }
-    )?;
-    for content in project.content {
-        println!("\"{}\": ./{}", content.name, content.path)
     }
-    for dir in project.dirs {
-        println!("\"{}\": ./{}/", dir.name, dir.path)
-    }
+    let root = env::current_dir()?;
+    print(&load_project(&root)?.content, 0);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn entry(name: &str, path: &str) -> ContentEntry {
-        ContentEntry { name: name.into(), path: path.into() }
-    }
+    use ContentEntry as E;
 
     fn project_in(root: &Path) -> ProjectFile {
         let _ = fs::remove_dir_all(root);
@@ -549,8 +588,11 @@ mod tests {
         ProjectFile {
             input: root.join("src"),
             output: root.join("src/out"),
-            content: vec![entry("Введение", "intro.rush"), entry("Общее", "a.rush"), entry("Общее", "b.rush")],
-            dirs: vec![entry("API", "api")],
+            content: vec![
+                E::file("Введение", "intro.rush"),
+                E::file("Общее", "a.rush"),
+                E::dir("API", "api", vec![E::file("Общее", "api/b.rush")]),
+            ],
             ..ProjectFile::default()
         }
     }
@@ -563,15 +605,46 @@ mod tests {
         assert_eq!(rename_in(&mut p, "Введение", "Начало").unwrap(), "intro.rush");
         assert_eq!(p.content[0].name, "Начало");
         assert_eq!(rename_in(&mut p, "API", "Справочник").unwrap(), "api");
-        assert_eq!(p.dirs[0].name, "Справочник");
+        assert_eq!(p.content[2].name, "Справочник");
         assert_eq!(rename_in(&mut p, "guide", "Руководство").unwrap(), "guide");
-        assert_eq!(p.dirs[1], entry("Руководство", "guide"));
+        assert_eq!(p.content[3], E::dir("Руководство", "guide", vec![]));
 
         let ambiguous = rename_in(&mut p, "Общее", "X").unwrap_err();
-        assert!(ambiguous.to_string().contains("content ./a.rush, content ./b.rush"), "{ambiguous}");
+        assert!(ambiguous.to_string().contains("file ./a.rush, file ./api/b.rush"), "{ambiguous}");
         let on_disk = rename_in(&mut p, "deep", "X").unwrap_err();
         assert!(on_disk.to_string().contains("folder ./api/deep, folder ./guide/deep"), "{on_disk}");
         assert_eq!(rename_in(&mut p, "Нет", "X").unwrap_err().kind(), io::ErrorKind::NotFound);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn add_puts_entry_into_existing_dir_or_root() {
+        let root = env::temp_dir().join("rush_cli_add");
+        let mut p = project_in(&root);
+
+        assert_eq!(add_in(&mut p, Some("В API"), "api/new".into(), false).unwrap(), "api/new.rush");
+        assert_eq!(p.content[2], E::dir("API", "api", vec![E::file("Общее", "api/b.rush"), E::file("В API", "api/new.rush")]));
+        assert!(root.join("src/api/new.rush").is_file());
+
+        // guide exists on disk but not in content: goes to the root
+        assert_eq!(add_in(&mut p, Some("Вне"), "guide/x".into(), false).unwrap(), "guide/x.rush");
+        assert_eq!(p.content[3], E::file("Вне", "guide/x.rush"));
+
+        assert_eq!(add_in(&mut p, Some("Глубже"), "api/deep".into(), true).unwrap(), "api/deep");
+        assert_eq!(add_in(&mut p, Some("Ещё"), "api/deep/y".into(), false).unwrap(), "api/deep/y.rush");
+        let ContentEntryKind::Dir { childs } = &p.content[2].kind else { panic!() };
+        assert_eq!(childs[2], E::dir("Глубже", "api/deep", vec![E::file("Ещё", "api/deep/y.rush")]));
+
+        assert_eq!(add_in(&mut p, None, "Корень".into(), false).unwrap(), "Корень.rush");
+        assert_eq!(p.content[4], E::file("Корень", "Корень.rush"));
+
+        if let Err(AddError::Io(err)) = add_in(&mut p, Some("Снова"), "api/deep".into(), true){
+            assert_eq!(err.kind(), io::ErrorKind::AlreadyExists)
+        }
+        else {
+            panic!("Cannot handle already exts case")
+        }
+        assert!(add_in(&mut p, Some("Дубль"), "api/new".into(), false).is_err());
         fs::remove_dir_all(&root).unwrap();
     }
 }

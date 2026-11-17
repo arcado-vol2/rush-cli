@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn separate_dirs_are_cleaned_fully() {
         let t = Tmp::new("separate");
-        t.file("project.toml");
+        t.file("project.yaml");
         t.file("src/a.rush");
         t.file("out/old.html");
         t.file("out/fonts/a.ttf");
@@ -137,13 +137,13 @@ mod tests {
         assert!(!dirs.overlap());
         dirs.clean().unwrap();
         assert!(t.has("out") && !t.has("out/old.html") && !t.has("out/fonts"));
-        assert!(t.has("src/a.rush") && t.has("project.toml"));
+        assert!(t.has("src/a.rush") && t.has("project.yaml"));
     }
 
     #[test]
     fn same_dir_removes_only_listed() {
         let t = Tmp::new("same");
-        for f in ["project.toml", "a.rush", "pic.png", "mine.md", "a.md", "fonts/a.ttf", "keep/x.ttf", "keep/mine.txt", ".git/HEAD"] {
+        for f in ["project.yaml", "a.rush", "pic.png", "mine.md", "a.md", "fonts/a.ttf", "keep/x.ttf", "keep/mine.txt", ".git/HEAD"] {
             t.file(f);
         }
         let dirs = t.dirs("", "");
@@ -152,7 +152,7 @@ mod tests {
         dirs.clean().unwrap();
 
         assert!(!t.has("a.md") && !t.has("fonts") && !t.has("keep/x.ttf") && !t.has(MANIFEST));
-        for f in ["project.toml", "a.rush", "pic.png", "mine.md", "keep/mine.txt", ".git/HEAD"] {
+        for f in ["project.yaml", "a.rush", "pic.png", "mine.md", "keep/mine.txt", ".git/HEAD"] {
             assert!(t.has(f), "{f}");
         }
     }
@@ -183,20 +183,20 @@ mod tests {
     #[test]
     fn input_inside_output() {
         let t = Tmp::new("nested_in");
-        t.file("project.toml");
+        t.file("project.yaml");
         t.file("src/a.rush");
         t.file("a.html");
         let dirs = t.dirs("src", "");
         assert!(dirs.overlap() && dirs.nested_output().is_none());
         dirs.save_manifest(&["a.html".into()]).unwrap();
         dirs.clean().unwrap();
-        assert!(!t.has("a.html") && t.has("src/a.rush") && t.has("project.toml"));
+        assert!(!t.has("a.html") && t.has("src/a.rush") && t.has("project.yaml"));
     }
 
     #[test]
     fn project_root_inside_output_is_overlap() {
         let t = Tmp::new("root_in");
-        t.file("proj/project.toml");
+        t.file("proj/project.yaml");
         t.file("elsewhere/a.rush");
         let dirs = Dirs::resolve(&t.0.join("proj"), &t.0.join("elsewhere"), &t.0.join("proj")).unwrap();
         assert!(dirs.overlap());
