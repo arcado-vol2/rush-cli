@@ -13,6 +13,7 @@ For now the installer is built only for Windows with [Inno Setup](https://jrsoft
 ```
 git clone https://github.com/arcado-vol2/rush-cli.git
 cd rush-cli
+git submodule update --init --recursive
 cargo build --release
 ```
 

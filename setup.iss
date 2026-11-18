@@ -35,6 +35,9 @@ AppId={{72BE8182-0591-4ED5-8E2A-56788E0E0CBA}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+AppPublisherURL=https://github.com/arcado-vol2/rush-cli
+AppSupportURL=https://github.com/arcado-vol2/rush-cli/issues
+AppUpdatesURL=https://github.com/arcado-vol2/rush-cli/releases
 DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
@@ -46,6 +49,7 @@ OutputDir=output
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
 Compression=lzma2
 SolidCompression=yes
+WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Languages]

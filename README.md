@@ -13,6 +13,7 @@
 ```
 git clone https://github.com/arcado-vol2/rush-cli.git
 cd rush-cli
+git submodule update --init --recursive
 cargo build --release
 ```
 
