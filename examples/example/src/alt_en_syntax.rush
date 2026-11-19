@@ -1,0 +1,53 @@
+\# English table 
+/ a / b / 
+\#- 
+/ c / d /
+/ e / f /
+\#
+
+\# English table with aligment
+    / a / b / c / d / e / f /
+\#- / C / R / L / C10 / R10 / L10 /
+    / g / k / l / m / n / o /
+\#
+
+
+\№ Комбинированная таблица 1
+/ a / b / c /
+\#- / Ц / R / Л /
+/ d / e / f /
+\№
+
+\# Комбинированная таблица 2
+/ a / b / c /
+\№-
+/ d / e / f /
+\№
+
+\# Комбинированная таблица 3
+/ a / b / c /
+\№-
+/ d / e / f /
+\#
+
+
+
+
+\# ex table
+/ a /
+\#- 
+/ c / 
+\#
+
+\$ ex formula
+E = mc^2
+\$
+
+\//js ex code
+console.log("sup")
+\//
+
+\(кот, ex img)
+
+
+Text with alt refs: \*f(ex formula) \*t(ex table) \*к(ex code) \*l(ex code) \*c(ex code) \*и(ex img) \*d(ex img) \*i(ex img)

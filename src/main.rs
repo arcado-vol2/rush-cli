@@ -14,10 +14,10 @@ mod config;
 enum Style {
     /// Pure GOST 7.32: the external standard for academic and scientific papers printed on A4.
     Gost7_32,
-    /// Readable academic paper: prints on A4 as well as GOST 7.32,
-    /// but with sans-serif text and warm markers the eye catches easily.
+    /// Readable academic paper: prints on A4 just like GOST 7.32,
+    /// but with sans-serif text and warm markers that the eye catches easily.
     Modern,
-    /// Main modern web format: documentation, technical books and articles.
+    /// The main modern web format: documentation, technical books and articles.
     /// Supports light and dark themes.
     Blog,
 }
@@ -55,13 +55,13 @@ impl From<ThemeArg> for Theme {
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum OutType {
-    /// Create HTML tree in output with single CSS file,
+    /// Create an HTML tree in the output with a single CSS file,
     /// or one multipage HTML file if the project is single.
-    /// In this out type all images will be copied to out directory.
+    /// With this output type, all images are copied to the output directory.
     Html,
-    /// Create Markdown MDX tree in output,
+    /// Create a Markdown MDX tree in the output,
     /// or one Markdown file if the project is single.
-    /// In this out type all images will be copied to out directory.
+    /// With this output type, all images are copied to the output directory.
     Markdown
 }
 
@@ -77,7 +77,7 @@ impl fmt::Display for OutType {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Create new project
+    /// Create a new project
     New {
         /// Name of the project
         name: String,
@@ -88,66 +88,66 @@ enum Command {
         /// Determines the render filetype.
         out_type: OutType,
         #[arg(long)]
-        /// Render the whole project to one file, instead of one file per .rush file.
+        /// Render the whole project to one file instead of one file per .rush file.
         single: bool,
         #[arg(long)]
         /// Static output without scripts: no menu button, theme is fixed.
         no_js: bool,
         #[arg(long, value_enum, default_value_t = ThemeArg::Auto)]
-        /// Starting theme; fixed one without scripts.
+        /// Starting theme; a fixed one without scripts.
         theme: ThemeArg,
         #[arg(long, default_value = "src")]
-        /// How to name src folder
+        /// How to name the src folder
         src_name: String,
         #[arg(long, default_value = "out")]
-        /// How to name out folder
+        /// How to name the out folder
         out_name: String
     },
-    /// Build current project
+    /// Build the current project
     Build {
         /// Target path. If not set, the current directory is used.
         path: Option<PathBuf>,
 
         #[arg(value_enum, long)]
-        /// Render to different output type, without changing type in 'project.yaml'
+        /// Render to a different output type without changing the type in 'project.yaml'
         out: Option<OutType>,
 
         #[arg(long)]
-        /// Render to one file or to one file per .rush file, without changing 'single' in 'project.yaml'
+        /// Render to one file or to one file per .rush file without changing 'single' in 'project.yaml'
         single: Option<bool>,
 
         #[arg(long)]
-        /// Render with or without scripts, without changing 'no_js' in 'project.yaml'
+        /// Render with or without scripts without changing 'no_js' in 'project.yaml'
         no_js: Option<bool>,
 
         #[arg(value_enum, long)]
-        /// Render with another theme, without changing 'theme' in 'project.yaml'
+        /// Render with another theme without changing 'theme' in 'project.yaml'
         theme: Option<ThemeArg>,
 
     },
-    /// Add new .rush file, or a folder with --dir
+    /// Add a new .rush file, or a folder with --dir
     Add {
-        /// Relative path to new file, from src. If set dir that exists in project.yaml will add file to it,
-        /// otherwise will add it to project root, no matter of filepath.
+        /// Path to the new file, relative to src. If it points into a dir that exists in project.yaml, the file is added to that dir,
+        /// otherwise it is added to the project root, regardless of the file path.
         path: PathBuf,
-        /// Name of the new file or folder. If it is not specified, an object will be created with a name that matches the original file name.
+        /// Name of the new file or folder. If it is not specified, the object is created with a name that matches the original file name.
         name: Option<String>,
         #[arg(long)]
         /// Create a folder and give it the name in the menu
         dir: bool,
     },
-    /// Rename a file or a folder in the menu, the files on disk stay as they are
+    /// Rename a file or a folder in the menu; the files on disk stay as they are
     Rename {
-        /// Current name in content or folders, or a folder name on disk
+        /// Current name in the content or folders, or a folder name on disk
         old_name: String,
         new_name: String,
     },
-    /// Remove .rush file from project
+    /// Remove a .rush file from the project
     Remove {
-        /// Name of the file in project
+        /// Name of the file in the project
         name: String
     },
-    /// Show all .rush files in project
+    /// Show all .rush files in the project
     List
 }
 
@@ -192,7 +192,7 @@ fn main() -> ExitCode {
                 eprintln!("Failed to create new project: {e}");
                 return  ExitCode::FAILURE;
             }
-            println!("Successfully create new project '{name}'");
+            println!("Successfully created new project '{name}'");
             return ExitCode::SUCCESS;
         },
         Command::Add { name, path, dir } => {
@@ -202,7 +202,7 @@ fn main() -> ExitCode {
                     return ExitCode::SUCCESS;
                 },
                 Err(e) => {
-                    eprintln!("Failed to add new file: {e}");
+                    eprintln!("Failed to add new file or dir: {e}");
                     return  ExitCode::FAILURE;
                 }
             }
@@ -225,7 +225,7 @@ fn main() -> ExitCode {
                     for w in &warnings {
                         println!("{w:?}");
                     }
-                    println!("Project has been built.! {} warinings", warnings.len());
+                    println!("Project has been built! {} warnings", warnings.len());
                     return ExitCode::SUCCESS;
                 },
                 Err(e) => {
@@ -245,7 +245,7 @@ fn main() -> ExitCode {
                     return ExitCode::SUCCESS;
                 },
                 Ok(Removed::NotInProject) => {
-                    println!("Not founded file '{name}' in project");
+                    eprintln!("File '{name}' not found in project");
                     return  ExitCode::FAILURE;
                 },
                 Err(e) => {
@@ -256,7 +256,7 @@ fn main() -> ExitCode {
         }
         Command::List => {
             if let Err(e) = list() {
-                eprintln!("Fauled to list a project: {e}");
+                eprintln!("Failed to list the project: {e}");
                 return ExitCode::FAILURE;
             }
             return ExitCode::SUCCESS;
@@ -273,7 +273,6 @@ fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutTy
     fs::create_dir_all(&src_dir)?;
     fs::create_dir_all(&out_dir)?;
 
-    println!("{:?}", style.to_string());
     let config = Config {
         style: DocStyle::from_name(&style.to_string()).expect("every Style has a DocStyle"),
         out: DocOut::from_name(&out_type.to_string()).expect("every OutType has a DocOut"),
@@ -286,7 +285,7 @@ fn new(name: &str, src_name: &str, out_name: &str, style: Style, out_type: OutTy
 
 fn load_project(root: &Path) -> io::Result<ProjectFile> {
     ProjectFile::load(root).map(|(project, _)| project).map_err(|e| match e.kind() {
-        io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush new <NAME>'")),
+        io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found; the command must be called from the project directory. Create a project first with 'rush new <NAME>'")),
         _ => e,
     })
 }
@@ -348,7 +347,7 @@ fn add_in(project: &mut ProjectFile, name: Option<&str>, rel: PathBuf, dir: bool
     let entry = if dir {
         let path = slashed(&rel);
         if project.find_dir_path(&path).is_some() {
-            return  Err(AddError::Io(io::Error::new(io::ErrorKind::AlreadyExists, format!("folder ./{path} is already in content"))));
+            return  Err(AddError::Io(io::Error::new(io::ErrorKind::AlreadyExists, format!("folder ./{path} is already in the content"))));
         }
         fs::create_dir_all(project.input.join(&rel))?;
         let name = match name {
@@ -397,7 +396,7 @@ fn build(root: Option<PathBuf>, redef_out_type: Option<OutType>, redef_single: O
     let root = root.map_or(env::current_dir()?, |root| root);
     let (mut file, config_warns) = ProjectFile::load(&root).map_err(|e|
         match e.kind() {
-            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found, command must be called from project directory. Create project first with 'rush-cli new <NAME>'")),
+            io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{PROJECT_FILE} not found; the command must be called from the project directory. Create a project first with 'rush new <NAME>'")),
             _ => e,
         }
     )?;
@@ -535,7 +534,7 @@ fn rename_in(project: &mut ProjectFile, old_name: &str, new_name: &str) -> io::R
                     project.insert_entry(ContentEntry::dir(new_name, path.clone(), Vec::new()));
                     Ok(path.clone())
                 }
-                [] => Err(io::Error::new(io::ErrorKind::NotFound, format!("'{old_name}' not found in content or source folders"))),
+                [] => Err(io::Error::new(io::ErrorKind::NotFound, format!("'{old_name}' not found in the content or source folders"))),
                 many => Err(ambiguous(old_name, &many.iter().map(|p| format!("folder ./{p}")).collect::<Vec<_>>())),
             }
         }

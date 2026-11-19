@@ -10,7 +10,7 @@ build:
 content:
 - kind: file
   name: rush
-  path: README.rush
+  path: README_RU.rush
 - kind: file
   name: rush
-  path: README_EN.rush
+  path: README.rush

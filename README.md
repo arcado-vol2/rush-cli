@@ -1,14 +1,14 @@
 # rush
 
-[**ENGLISH VERSION**](README_EN.md)
+[**РУССКАЯ ВЕРСИЯ**](README.md)
 
-**rush** — "RU Simple Help", "Russian Student Helper", "Russian Utility Syntax for Humans", "because RUssian Students Hate formatting". Назвать можно по-разному, а суть одна.
+**Rush** — "RU Simple Help", "Russian Student Helper", "Russian Utility Syntax for Humans", "because RUssian Students Hate formatting". Call it what you like, the idea stays the same.
 
-**rush** — минималистичный язык разметки текстов, придуманный специально для их оформления на русском языке без переключения раскладки.
+**Rush** — a minimalist markup language designed specifically for formatting texts in Russian without switching the keyboard layout.
 
-Данный репозиторий реализует [rush-lib](https://github.com/arcado-vol2/rush-lib) как консольное приложение и позволяет быстро управлять rush-проектами.
+This repository wraps [rush-lib](https://github.com/arcado-vol2/rush-lib) in a command-line application that lets you manage rush projects quickly.
 
-Установщик пока сделан только под Windows через [Inno Setup](https://jrsoftware.org/isinfo.php), для прочих ОС можно собрать приложение из исходников:
+For now the installer is built only for Windows with [Inno Setup](https://jrsoftware.org/isinfo.php). On other operating systems you can build the application from source:
 
 ```
 git clone https://github.com/arcado-vol2/rush-cli.git
@@ -17,164 +17,164 @@ git submodule update --init --recursive
 cargo build --release
 ```
 
-Исполняемый файл `rush` будет в `target/release/`. В `PATH` его тогда надо будет прописать самостоятельно.
+The `rush` executable will be in `target/release/`. You will need to add it to `PATH` yourself.
 
-## Быстрый старт
+## Quick start
 
-После установки и регистрации в `PATH` создаём новый проект:
-
-```
-rush new <ИМЯ ПРОЕКТА>
-```
-
-Появится директория `<ИМЯ ПРОЕКТА>`, в которой будут директории `out` (тут будут ваши файлы после сборки) и `src` (сюда идут исходники), а также файл `project.yaml`, где лежат все настройки сборки.
+After installing and adding it to `PATH`, create a new project:
 
 ```
-cd <ИМЯ ПРОЕКТА>
+rush new <PROJECT NAME>
 ```
 
-Затем добавляем новый файл командой
+This creates a `<PROJECT NAME>` directory with an `out` directory (your files appear here after the build), a `src` directory (sources go here) and a `project.yaml` file that holds all build settings.
 
 ```
-rush add <ИМЯ ФАЙЛА>
+cd <PROJECT NAME>
 ```
 
-Пишем в нём текст, оформленный по [синтаксису rush](https://github.com/arcado-vol2/rush-lib/blob/master/README.md).
+Then add a new file with
 
-После этого собираем проект:
+```
+rush add <FILE NAME>
+```
+
+Write text in it using the [rush syntax](https://github.com/arcado-vol2/rush-lib/blob/master/README.md).
+
+Then build the project:
 
 ```
 rush build
 ```
 
-В директории `out` появится выходной html-файл.
+An html output file will appear in the `out` directory.
 
-> Как тест возможностей языка можно собрать `examples/example`
+> To try out the language features, build `examples/example`
 
-## Параметры project.yaml
+## project.yaml parameters
 
-1  Параметры `document`
+1  `document` parameters
 
-| Имя | Возможные значения | Что делает | Примечание |
+| Name | Possible values | What it does | Note |
 | :-: | :-: | :-: | :-: |
-| `style` | `blog`/`modern`/`gost7-32` | Определяет, как будет выглядеть выходной файл | Подробности о стилях ниже |
-| `out` | `html`/`markdown` | Определяет выходной формат проекта | Для `html` также положит в выходную директорию шрифты |
-| `single` | `true`/`false` | Если `false`, для каждого документа `.rush` будет создан соответствующий ему документ выходного формата и, если это возможно, панель навигации между документами. Если `true`, весь проект собирается в один файл | Для `html` это постраничный `index.html`, для `markdown` — `index.md`. В него попадают только файлы из `content`, в их порядке |
-| `no_js` | `true`/`false` | При выводе в `html` стили `modern` и `blog` могут содержать функции, реализованные через JavaScript (боковое сэндвич-меню, кнопки копирования кода, кнопка переключения темы). Это поведение можно убрать, поставив `no_js: true`, если нужна сборка туда, где JavaScript ненадёжен | Кнопки копирования и сэндвич-меню есть у `modern` и `blog`, переключение темы — только у `blog` |
-| `theme` | `auto`/`dark`/`light` | Определяет начальную тему документа; при `no_js: true` эта тема будет у него всегда | Разные темы доступны только у `blog` |
+| `style` | `blog`/`modern`/`gost7-32` | Defines how the output file looks | Styles are described below |
+| `out` | `html`/`markdown` | Defines the output format of the project | For `html` the fonts are also put into the output directory |
+| `single` | `true`/`false` | If `false`, each `.rush` document gets its own output document and, where possible, a navigation panel between documents. If `true`, the whole project is built into one file | For `html` it is a paged `index.html`, for `markdown` — `index.md`. Only files from `content` are included, in their order |
+| `no_js` | `true`/`false` | With `html` output the `modern` and `blog` styles can contain JavaScript features (side hamburger menu, code copy buttons, theme switch button). Set `no_js: true` to turn them off when the output goes where JavaScript is unreliable | Copy buttons and the hamburger menu are in `modern` and `blog`, the theme switch is only in `blog` |
+| `theme` | `auto`/`dark`/`light` | Defines the starting theme of the document; with `no_js: true` the document always keeps it | Different themes are available only in `blog` |
 
-**Стили**
+**Styles**
 
-- `blog` — стиль, вдохновлённый статьями в техблогах и веб-документацией: большие отступы, меню поиска и лаконичное современное оформление. Основной для веба, поддерживает светлую и тёмную темы.
-- `modern` — стиль для печати современных академических работ на А4: шрифт без засечек, цветовые контрасты.
-- `gost7-32` — стиль, реализующий российский `ГОСТ 7.32` — стандарт для академических и научных работ, которые печатаются на А4. Стандарт оформления лабораторных работ в вузах.
+- `blog` — a style inspired by tech blog articles and web documentation: generous spacing, a search menu and a clean modern look. The main style for the web, supports light and dark themes.
+- `modern` — a style for printing modern academic papers on A4: sans-serif font, color contrasts.
+- `gost7-32` — a style implementing the Russian `GOST 7.32` — the standard for academic and scientific papers printed on A4. It is the standard for lab reports in Russian universities.
 
-2  Параметры `build`
+2  `build` parameters
 
-| Имя | Возможные значения | Что делает | Примечание |
+| Name | Possible values | What it does | Note |
 | :-: | :-: | :-: | :-: |
-| `input` | Любой относительный путь | Определяет директорию, откуда будут браться исходные текстовые файлы и изображения | Если нужно брать из корня проекта, надо поставить `.` |
-| `output` | Любой относительный путь | Определяет директорию, куда будут сохраняться файлы после сборки | Перед сборкой директория очищается. Если она пересекается с `input` или корнем проекта, удаляются только файлы прошлой сборки: их список хранится в `.rush-build` |
+| `input` | Any relative path | Defines the directory with the source text files and images | To use the project root, set `.` |
+| `output` | Any relative path | Defines the directory where files are saved after the build | The directory is cleaned before the build. If it overlaps with `input` or the project root, only files from the previous build are removed: their list is kept in `.rush-build` |
 
-**`content`** — описание содержания проекта, по нему строится навигация. У каждой записи обязательны `kind`, `name` и `path`. `kind` может быть `dir` или `file`, у `kind: dir` может быть ещё `content` со вложенными записями.
+**`content`** — the project contents, used to build the navigation. Every entry requires `kind`, `name` and `path`. `kind` is either `dir` or `file`; a `kind: dir` entry may also have `content` with nested entries.
 
-## Команды cli
+## CLI commands
 
-Все команды, кроме `new`, вызываются из директории проекта, то есть там, где лежит `project.yaml`. Справку по любой команде можно вывести через `rush <КОМАНДА> --help`, версию — через `rush --version`.
+All commands except `new` are run from the project directory, where `project.yaml` is. Help for any command is available with `rush <COMMAND> --help`, the version with `rush --version`.
 
 ### `new`
 
-Создаёт новый проект в текущей директории.
+Creates a new project in the current directory.
 
 ```
-rush new <ИМЯ> [ПАРАМЕТРЫ]
+rush new <NAME> [OPTIONS]
 ```
 
-*Аргументы*
+*Arguments*
 
-**`<ИМЯ>`** — обязательный аргумент, имя создаваемого проекта и его директории.
+**`<NAME>`** — required, the name of the project and its directory.
 
-**`-s, --style <СТИЛЬ>`** — стиль проекта: `blog`, `modern` или `gost7-32`. По умолчанию `blog`.
+**`-s, --style <STYLE>`** — project style: `blog`, `modern` or `gost7-32`. Defaults to `blog`.
 
-**`-o, --out-type <ВЫХОДНОЙ ТИП>`** — выходной формат проекта: `html` или `markdown`. По умолчанию `html`.
+**`-o, --out-type <OUTPUT TYPE>`** — project output format: `html` or `markdown`. Defaults to `html`.
 
-**`--single`** — собирать весь проект в один файл.
+**`--single`** — build the whole project into one file.
 
-**`--no-js`** — собирать `html` без JavaScript.
+**`--no-js`** — build `html` without JavaScript.
 
-**`--theme <ТЕМА>`** — начальная тема проекта: `auto`, `light` или `dark`. По умолчанию `auto`.
+**`--theme <THEME>`** — starting theme: `auto`, `light` or `dark`. Defaults to `auto`.
 
-**`--src-name <ИМЯ>`** — имя директории исходников. По умолчанию `src`.
+**`--src-name <NAME>`** — name of the source directory. Defaults to `src`.
 
-**`--out-name <ИМЯ>`** — имя выходной директории. По умолчанию `out`.
+**`--out-name <NAME>`** — name of the output directory. Defaults to `out`.
 
 ### `build`
 
-Собирает проект. Параметры позволяют разово собрать проект с другими настройками, не меняя `project.yaml`.
+Builds the project. The options override the settings for one build without changing `project.yaml`.
 
 ```
-rush build [ПУТЬ] [ПАРАМЕТРЫ]
+rush build [PATH] [OPTIONS]
 ```
 
-*Аргументы*
+*Arguments*
 
-**`[ПУТЬ]`** — путь к директории проекта. Если не указан, используется текущая директория.
+**`[PATH]`** — path to the project directory. Defaults to the current directory.
 
-**`--out <ВЫХОДНОЙ ТИП>`** — собрать в `html` или `markdown`.
+**`--out <OUTPUT TYPE>`** — build to `html` or `markdown`.
 
-**`--single <true|false>`** — собрать в один файл или в файл на каждый документ.
+**`--single <true|false>`** — build into one file or into one file per document.
 
-**`--no-js <true|false>`** — собрать без JavaScript или с ним.
+**`--no-js <true|false>`** — build with or without JavaScript.
 
-**`--theme <ТЕМА>`** — собрать с темой `auto`, `light` или `dark`.
+**`--theme <THEME>`** — build with the `auto`, `light` or `dark` theme.
 
 ### `add`
 
-Создаёт новый файл `.rush` или новую директорию и добавляет запись о ней в `content`.
+Creates a new `.rush` file or a new directory and adds its entry to `content`.
 
 ```
-rush add <ПУТЬ> [ИМЯ] [--dir]
+rush add <PATH> [NAME] [--dir]
 ```
 
-*Аргументы*
+*Arguments*
 
-**`<ПУТЬ>`** — путь к новому файлу относительно директории исходников. Расширение `.rush` подставляется само, другие расширения не допускаются. Если путь ведёт в директорию, которая уже есть в `content`, запись попадёт в неё, иначе — в корень `content`.
+**`<PATH>`** — path to the new file relative to the source directory. The `.rush` extension is added automatically, other extensions are rejected. If the path leads into a directory that is already in `content`, the entry goes there, otherwise to the root of `content`.
 
-**`[ИМЯ]`** — имя файла или директории в навигации. Если не указано, берётся имя файла без расширения.
+**`[NAME]`** — name of the file or directory in the navigation. Defaults to the file name without extension.
 
-**`--dir`** — создать директорию вместо файла.
+**`--dir`** — create a directory instead of a file.
 
 ### `rename`
 
-Переименовывает файл или директорию в навигации, файлы на диске остаются как есть.
+Renames a file or directory in the navigation; files on disk stay as they are.
 
 ```
-rush rename <СТАРОЕ ИМЯ> <НОВОЕ ИМЯ>
+rush rename <OLD NAME> <NEW NAME>
 ```
 
-*Аргументы*
+*Arguments*
 
-**`<СТАРОЕ ИМЯ>`** — текущее имя в `content`. Если такого имени там нет, ищется директория с таким именем на диске: она добавляется в `content` под новым именем.
+**`<OLD NAME>`** — current name in `content`. If there is no such name, a directory with that name is searched on disk and added to `content` under the new name.
 
-**`<НОВОЕ ИМЯ>`** — новое имя.
+**`<NEW NAME>`** — the new name.
 
-Если имя встречается в нескольких местах, команда ничего не меняет и выводит список совпадений.
+If the name is found in several places, the command changes nothing and lists the matches.
 
 ### `remove`
 
-Удаляет файл `.rush` из `content` и с диска.
+Removes a `.rush` file from `content` and from disk.
 
 ```
-rush remove <ИМЯ>
+rush remove <NAME>
 ```
 
-*Аргументы*
+*Arguments*
 
-**`<ИМЯ>`** — имя файла в `content`. Если файла уже нет на диске, удаляется только запись.
+**`<NAME>`** — name of the file in `content`. If the file is already missing on disk, only the entry is removed.
 
 ### `list`
 
-Выводит дерево `content`: имя каждой записи и путь к ней.
+Prints the `content` tree: the name and path of every entry.
 
 ```
 rush list

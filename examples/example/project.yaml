@@ -4,22 +4,23 @@ document:
   single: false
   no_js: false
   theme: auto
-
 build:
   input: src
   output: out
-
 content:
+- kind: file
+  name: Основная страница
+  path: main.rush
+- kind: file
+  name: Страница пример внутренней ссылки
+  path: second.rush
+- kind: dir
+  name: Директория
+  path: dir
+  content:
   - kind: file
-    name: Основная страница
-    path: main.rush
-  - kind: file
-    name: Страница пример внутренней ссылки
-    path: second.rush
-  - kind: dir
-    name: Директория
-    path: dir
-    content:
-      - kind: file
-        name: Третий
-        path: dir/third.rush
+    name: Третий
+    path: dir/third.rush
+- kind: file
+  name: alt_en_syntax
+  path: alt_en_syntax.rush
