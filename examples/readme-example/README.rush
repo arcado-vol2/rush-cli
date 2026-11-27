@@ -12,7 +12,6 @@ For now the installer is built only for Windows with \,https://jrsoftware.org/is
 \// 0
 git clone https://github.com/arcado-vol2/rush-cli.git
 cd rush-cli
-git submodule update --init --recursive
 cargo build --release
 \//
 
